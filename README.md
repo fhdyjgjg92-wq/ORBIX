@@ -1,11 +1,12 @@
 
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#050b18">
-<title>ORBIX 2.5 — Performance Edition</title>
+<title>ORBIX 2.5 — Fixed Edition</title>
 <style>
 :root{--cyan:#27d9ff;--panel:rgba(5,17,38,.94)}
 *{box-sizing:border-box}
@@ -189,6 +190,7 @@ function resize(){
  mini.height=Math.max(1,Math.round(r.height*DPR));
  mctx.setTransform(DPR,0,0,DPR,0,0);
 
+ if(pieces.length)updateCamera(1000);
  if(!running)render();
 }
 addEventListener('resize',resize);
@@ -253,7 +255,27 @@ function resetWorld(){
  for(let i=0;i<BOT_COUNT;i++)
   bots.push(newBot());
 
- camera={x:0,y:0,zoom:1};
+ /* FIX: وضع الكاميرا مباشرة فوق اللاعب عند بداية الجولة */
+ const initialZoom=clamp(
+  1.12-Math.sqrt(totalMass())*.0025,
+  .48,
+  1.08
+ );
+
+ camera={
+  x:clamp(
+   WORLD.w/2-W/(2*initialZoom),
+   0,
+   Math.max(0,WORLD.w-W/initialZoom)
+  ),
+  y:clamp(
+   WORLD.h/2-H/(2*initialZoom),
+   0,
+   Math.max(0,WORLD.h-H/initialZoom)
+  ),
+  zoom:initialZoom
+ };
+
  leaderTimer=0;
  updateStats(true);
 }
@@ -621,7 +643,6 @@ function updatePellets(dt){
   }
 
   if(hit||t-q.born<450)continue;
-
   if(q.owner==='player'&&t-q.born<900)continue;
 
   let eaten=false;
@@ -715,7 +736,6 @@ function botThink(b){
 
 function updateBots(dt){
  const step=dt/16.666;
- const t=now();
 
  for(const b of bots){
   b.think-=dt;
@@ -956,26 +976,48 @@ function respawn(){
  toast('عدت للساحة — حماية مؤقتة');
 }
 
-/* الكاميرا */
+/* الكاميرا — إصلاح التتبع والتمركز */
 
-function updateCamera(){
+function updateCamera(dt=16.666){
  if(!pieces.length)return;
 
  const total=totalMass()||1;
 
- const x=pieces.reduce((s,p)=>s+p.x*mass(p),0)/total;
- const y=pieces.reduce((s,p)=>s+p.y*mass(p),0)/total;
+ const x=pieces.reduce(
+  (s,p)=>s+p.x*mass(p),0
+ )/total;
 
- camera.zoom=clamp(1.12-Math.sqrt(total)*.0025,.48,1.08);
+ const y=pieces.reduce(
+  (s,p)=>s+p.y*mass(p),0
+ )/total;
+
+ const targetZoom=clamp(
+  1.12-Math.sqrt(total)*.0025,
+  .48,
+  1.08
+ );
+
+ const zoomSmooth=1-Math.exp(-dt/120);
+ camera.zoom+=(targetZoom-camera.zoom)*zoomSmooth;
 
  const vw=W/camera.zoom;
  const vh=H/camera.zoom;
 
- const targetX=clamp(x-vw/2,0,Math.max(0,WORLD.w-vw));
- const targetY=clamp(y-vh/2,0,Math.max(0,WORLD.h-vh));
+ const targetX=clamp(
+  x-vw/2,0,Math.max(0,WORLD.w-vw)
+ );
 
- camera.x+=(targetX-camera.x)*.16;
- camera.y+=(targetY-camera.y)*.16;
+ const targetY=clamp(
+  y-vh/2,0,Math.max(0,WORLD.h-vh)
+ );
+
+ const smooth=1-Math.exp(-dt/55);
+
+ camera.x+=(targetX-camera.x)*smooth;
+ camera.y+=(targetY-camera.y)*smooth;
+
+ camera.x=clamp(camera.x,0,Math.max(0,WORLD.w-vw));
+ camera.y=clamp(camera.y,0,Math.max(0,WORLD.h-vh));
 }
 
 /* الإحصائيات */
@@ -1007,7 +1049,7 @@ function update(dt){
  checkViruses();
  checkPlayerCollisions();
  mergePieces();
- updateCamera();
+ updateCamera(dt);
  updateStats();
 }
 
@@ -1205,7 +1247,6 @@ function loop(t){
  const dt=Math.min(40,lastTime?Math.max(0,t-lastTime):16.666);
  lastTime=t;
 
- // تحديث ثابت لتقليل اختلاف الحركة بين الأجهزة
  accumulator+=dt;
  const fixedStep=16.666;
 
